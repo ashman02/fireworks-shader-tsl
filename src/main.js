@@ -2,7 +2,18 @@ import * as THREE from "three/webgpu"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { SkyMesh } from "three/addons/objects/SkyMesh.js"
 import { Inspector } from "three/addons/inspector/Inspector.js"
-import { color, Fn, instancedBufferAttribute, min, mul, positionLocal, range, uniform, vec3 } from "three/tsl"
+import {
+	color,
+	Fn,
+	instancedBufferAttribute,
+	min,
+	mul,
+	positionLocal,
+	range,
+	uniform,
+	vec3,
+} from "three/tsl"
+import gsap from "gsap"
 
 /**
  * Base
@@ -50,7 +61,7 @@ const camera = new THREE.PerspectiveCamera(
 	0.1,
 	100,
 )
-camera.position.set(0, 10, 10)
+camera.position.set(1.5, 0, 6)
 scene.add(camera)
 
 // Controls
@@ -85,104 +96,146 @@ const textures = [
 	textureLoader.load("./particles/8.png"),
 ]
 
-const count = 20
+const createFirework = (count, position, texture, radius, color) => {
+	// Material
+	const material = new THREE.SpriteNodeMaterial({
+		color: color,
+		alphaMap: texture,
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+	})
 
-// Material
-const material = new THREE.SpriteNodeMaterial({
-	alphaMap: textures[4],
-	transparent: true,
-    depthWrite : false,
-    blending : THREE.AdditiveBlending
-})
+	// Uniforms
+	const progress = uniform(0)
 
-// Uniforms
-const progress = uniform(0)
+	// Buffers
+	const positionsArray = new Float32Array(count * 3)
+	const positionsBuffer = new THREE.InstancedBufferAttribute(
+		positionsArray,
+		3,
+	)
 
-// Buffers
-const positionsArray = new Float32Array(count * 3)
-const positionsBuffer = new THREE.InstancedBufferAttribute(positionsArray, 3)
+	const sizesArray = new Float32Array(count)
+	const sizesBuffer = new THREE.InstancedBufferAttribute(sizesArray, 1)
 
-const sizesArray = new Float32Array(count)
-const sizesBuffer = new THREE.InstancedBufferAttribute(sizesArray, 1)
+	const timesArray = new Float32Array(count)
+	const timesBuffer = new THREE.InstancedBufferAttribute(timesArray, 1)
 
-const timesArray = new Float32Array(count)
-const timesBuffer = new THREE.InstancedBufferAttribute(timesArray, 1)
+	for (let i = 0; i < count; i++) {
+		const i3 = i * 3
 
+		const spherical = new THREE.Spherical(
+			radius * (0.75 + Math.random() * 0.25),
+			Math.random() * Math.PI,
+			Math.random() * Math.PI * 2,
+		)
+		const position = new THREE.Vector3()
+		position.setFromSpherical(spherical)
 
-for(let i = 0; i < count; i++){
-    const i3 = i * 3
+		positionsArray[i3 + 0] = position.x
+		positionsArray[i3 + 1] = position.y
+		positionsArray[i3 + 2] = position.z
 
-    const spherical = new THREE.Spherical(
-        1 + Math.random() * 0.25,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI * 2
-    )
-    const position = new THREE.Vector3()
-    position.setFromSpherical(spherical)
+		sizesArray[i] = Math.random()
+		timesArray[i] = 1 + Math.random()
+	}
 
-    positionsArray[i3 + 0] = position.x
-    positionsArray[i3 + 1] = position.y
-    positionsArray[i3 + 2] = position.z
+	// Position
+	material.positionNode = Fn(() => {
+		// Buffers
+		const instancedPosition = instancedBufferAttribute(positionsBuffer)
+		const instancedtime = instancedBufferAttribute(timesBuffer)
 
-    sizesArray[i] = Math.random()
-    timesArray[i] = 1 + Math.random()
+		const instanceProgress = progress.mul(instancedtime)
+		const newPosition = instancedPosition.toVar()
+
+		// Exploding
+		const exploadingProgress = instanceProgress
+			.remapClamp(0, 0.1, 0, 1)
+			.oneMinus()
+			.pow(3)
+			.oneMinus()
+		newPosition.mulAssign(exploadingProgress)
+
+		// Falling
+		const fallingProgress = instanceProgress
+			.remapClamp(0.1, 1, 0, 1)
+			.oneMinus()
+			.pow(3)
+			.oneMinus()
+		newPosition.y.subAssign(fallingProgress.mul(0.2))
+
+		return newPosition
+	})()
+
+	// Scaling
+	material.scaleNode = Fn(() => {
+		// Buffers
+		const instancedSize = instancedBufferAttribute(sizesBuffer)
+		const instancedtime = instancedBufferAttribute(timesBuffer)
+
+		const instanceProgress = progress.mul(instancedtime)
+
+		// Scaling
+		const openingScaleProgress = instanceProgress.remap(0, 0.125, 0, 1)
+		const closingScaleProgress = instanceProgress.remap(0.125, 1, 1, 0)
+		const sizeProgress = min(
+			openingScaleProgress,
+			closingScaleProgress,
+		).clamp(0, 1)
+
+		// Twinkling
+		const twinkingProgress = instanceProgress.remapClamp(0.2, 0.8, 0, 1)
+		const sizeTwinkling = instanceProgress
+			.mul(30)
+			.sin()
+			.mul(0.5)
+			.add(0.5)
+			.mul(twinkingProgress)
+			.oneMinus()
+
+		return mul(instancedSize, sizeProgress, sizeTwinkling)
+	})()
+
+	// Sprites
+	const firework = new THREE.Sprite(material)
+	firework.count = count
+	firework.position.copy(position)
+	scene.add(firework)
+
+	// Destroy
+	const destroy = () => {
+		scene.remove(firework)
+		material.dispose()
+	}
+
+	// Animate
+	gsap.to(progress, {
+		value: 1,
+		ease: "none",
+		duration: 3,
+		onComplete: destroy,
+	})
 }
 
-// Position
-material.positionNode = Fn(() => {
-    // Buffers 
-    const instancedPosition = instancedBufferAttribute(positionsBuffer)
-    const instancedtime = instancedBufferAttribute(timesBuffer)
+const createRandomFirework = () => {
+	const count = Math.round(400 + Math.random() * 1000)
+	const position = new THREE.Vector3(
+		(Math.random() - 0.5) * 2,
+		Math.random(),
+		(Math.random() - 0.5) * 2,
+	)
+	const texture = textures[Math.floor(Math.random() * textures.length)]
+	const radius = 0.5 + Math.random()
+	const color = new THREE.Color()
+	color.setHSL(Math.random(), 1, 0.7)
+	createFirework(count, position, texture, radius, color)
+}
 
-    const instanceProgress = progress.mul(instancedtime)
-    const newPosition = instancedPosition.toVar()
+createRandomFirework()
 
-    // Exploding 
-    const exploadingProgress = instanceProgress.remapClamp(0, 0.1, 0, 1).oneMinus().pow(3).oneMinus()
-    newPosition.mulAssign(exploadingProgress)
-
-    // Falling
-    const fallingProgress = instanceProgress.remapClamp(0.1, 1, 0, 1).oneMinus().pow(3).oneMinus()
-    newPosition.y.subAssign(fallingProgress.mul(0.2))
-
-    return newPosition
-})()
-
-// Scaling
-material.scaleNode = Fn(() => {
-    // Buffers
-    const instancedSize = instancedBufferAttribute(sizesBuffer)
-    const instancedtime = instancedBufferAttribute(timesBuffer)
-
-    const instanceProgress = progress.mul(instancedtime)
-
-    // Scaling
-    const openingScaleProgress = instanceProgress.remap(0, 0.125, 0, 1)
-    const closingScaleProgress = instanceProgress.remap(0.125, 1, 1, 0)
-    const sizeProgress = min(openingScaleProgress, closingScaleProgress).clamp(0, 1)
-
-    // Twinkling
-    const twinkingProgress = instanceProgress.remapClamp(0.2, 0.8, 0, 1)
-    const sizeTwinkling = instanceProgress.mul(30).sin().mul(0.5).add(0.5).mul(twinkingProgress).oneMinus()
-
-
-    return mul(
-        instancedSize,
-        sizeProgress,
-        sizeTwinkling
-    )
-})()
-
-
-// Sprites
-const sprites = new THREE.Sprite(material)
-sprites.count = count
-scene.add(sprites)
-
-
-// Debug
-const fireworksGui = renderer.inspector.createParameters("Firework")
-fireworksGui.add(progress, "value", 0, 1, 0.0001).name("progress")
+window.addEventListener("click", createRandomFirework)
 
 /**
  * Sky
