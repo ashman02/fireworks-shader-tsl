@@ -81,6 +81,11 @@ renderer.setClearColor(0x111111)
 renderer.inspector = new Inspector()
 
 /**
+ * Audio
+ */
+
+
+/**
  * Fireworks
  */
 
@@ -96,7 +101,11 @@ const textures = [
 	textureLoader.load("./particles/8.png"),
 ]
 
-const createFirework = (count, position, texture, radius, color) => {
+const falldownStrength = uniform(0.2)
+const fireworkDuration = uniform(3)
+const twinkleFrequency = uniform(30)
+
+const createFirework = (count, position, size, texture, radius, color) => {
 	// Material
 	const material = new THREE.SpriteNodeMaterial({
 		color: color,
@@ -108,6 +117,7 @@ const createFirework = (count, position, texture, radius, color) => {
 
 	// Uniforms
 	const progress = uniform(0)
+	const sizeUniform = uniform(size)
 
 	// Buffers
 	const positionsArray = new Float32Array(count * 3)
@@ -127,7 +137,7 @@ const createFirework = (count, position, texture, radius, color) => {
 
 		const spherical = new THREE.Spherical(
 			radius * (0.75 + Math.random() * 0.25),
-			Math.random() * Math.PI,
+			Math.acos(1 - 2 * Math.random()),
 			Math.random() * Math.PI * 2,
 		)
 		const position = new THREE.Vector3()
@@ -164,7 +174,7 @@ const createFirework = (count, position, texture, radius, color) => {
 			.oneMinus()
 			.pow(3)
 			.oneMinus()
-		newPosition.y.subAssign(fallingProgress.mul(0.2))
+		newPosition.y.subAssign(fallingProgress.mul(falldownStrength))
 
 		return newPosition
 	})()
@@ -188,14 +198,14 @@ const createFirework = (count, position, texture, radius, color) => {
 		// Twinkling
 		const twinkingProgress = instanceProgress.remapClamp(0.2, 0.8, 0, 1)
 		const sizeTwinkling = instanceProgress
-			.mul(30)
+			.mul(twinkleFrequency)
 			.sin()
 			.mul(0.5)
 			.add(0.5)
 			.mul(twinkingProgress)
 			.oneMinus()
 
-		return mul(instancedSize, sizeProgress, sizeTwinkling)
+		return mul(sizeUniform, instancedSize, sizeProgress, sizeTwinkling)
 	})()
 
 	// Sprites
@@ -214,7 +224,7 @@ const createFirework = (count, position, texture, radius, color) => {
 	gsap.to(progress, {
 		value: 1,
 		ease: "none",
-		duration: 3,
+		duration: 1 * fireworkDuration.value,
 		onComplete: destroy,
 	})
 }
@@ -226,16 +236,22 @@ const createRandomFirework = () => {
 		Math.random(),
 		(Math.random() - 0.5) * 2,
 	)
+    const size = 0.1 + Math.random() * 0.1
 	const texture = textures[Math.floor(Math.random() * textures.length)]
 	const radius = 0.5 + Math.random()
 	const color = new THREE.Color()
 	color.setHSL(Math.random(), 1, 0.7)
-	createFirework(count, position, texture, radius, color)
+	createFirework(count, position, size, texture, radius, color)
 }
 
 createRandomFirework()
 
 window.addEventListener("click", createRandomFirework)
+
+const fireworkGui = renderer.inspector.createParameters("Firework")
+fireworkGui.add(falldownStrength, "value", 0, 1, 0.001).name("falldownSpeed")
+fireworkGui.add(fireworkDuration, "value", 0, 10, 0.01).name("duration")
+fireworkGui.add(twinkleFrequency, "value", 0, 50, 0.01).name("twinkleFrequency")
 
 /**
  * Sky
@@ -244,12 +260,12 @@ const sky = new SkyMesh()
 sky.scale.setScalar(1000)
 scene.add(sky)
 const effectController = {
-	turbidity: 5.5,
-	rayleigh: 1.25,
-	mieCoefficient: 0.02,
-	mieDirectionalG: 0.35,
-	elevation: 0.4,
-	azimuth: 52,
+	turbidity: 10,
+	rayleigh: 3,
+	mieCoefficient: 0.005,
+	mieDirectionalG: 0.95,
+	elevation: -2.2,
+	azimuth: 180,
 	cloudCoverage: 0.4,
 	cloudDensity: 0.4,
 	cloudElevation: 0.5,
