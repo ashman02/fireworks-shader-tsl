@@ -83,8 +83,6 @@ renderer.inspector = new Inspector()
 /**
  * Sound
  */
-const audioListener = new THREE.AudioContext() ? null : null // not needed, just using raw WebAudio
-
 const audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
 let explosionBuffer = null
@@ -95,16 +93,19 @@ const loadSound = async (url) => {
 	explosionBuffer = await audioContext.decodeAudioData(arrayBuffer)
 }
 
-loadSound("./audios/firework.mp3")
+loadSound("./audios/swoosh-firework.mp3")
+
+const boomTime = 0.94 // seconds into the file where the boom hits (at rate 1)
 
 const playExplosionSound = (radius) => {
-	if (!explosionBuffer) return // not loaded yet
+	if (!explosionBuffer) return boomTime // not loaded yet
 
 	const source = audioContext.createBufferSource()
 	source.buffer = explosionBuffer
 
 	// Slight random pitch variation so repeated clicks don't sound identical
-	source.playbackRate.value = 0.8 + Math.random() * 0.4 // 0.8 - 1.2
+	const rate = 0.8 + Math.random() * 0.4 // 0.8 - 1.2
+	source.playbackRate.value = rate
 
 	const gainNode = audioContext.createGain()
 	// Scale volume a bit with radius, plus randomness
@@ -118,6 +119,8 @@ const playExplosionSound = (radius) => {
 	gainNode.connect(audioContext.destination)
 
 	source.start(0)
+
+	return boomTime / rate
 }
 
 /**
@@ -135,6 +138,10 @@ const textures = [
 	textureLoader.load("./particles/7.png"),
 	textureLoader.load("./particles/8.png"),
 ]
+
+// 0 = linear (constant speed), 1 = full cubic out (stops dead at the end)
+const launchEase = (stopping) => (t) =>
+	stopping * (1 - Math.pow(1 - t, 3)) + (1 - stopping) * t
 
 const falldownStrength = uniform(0.2)
 const fireworkDuration = uniform(3)
@@ -197,7 +204,7 @@ const createFirework = (count, position, size, texture, radius, color) => {
 
 		// Exploding
 		const exploadingProgress = instanceProgress
-			.remapClamp(0, 0.1, 0, 1)
+			.remapClamp(0, 0.1, 0.02, 1)
 			.oneMinus()
 			.pow(3)
 			.oneMinus()
@@ -223,7 +230,7 @@ const createFirework = (count, position, size, texture, radius, color) => {
 		const instanceProgress = progress.mul(instancedtime)
 
 		// Scaling
-		const openingScaleProgress = instanceProgress.remap(0, 0.125, 0, 1)
+		const openingScaleProgress = instanceProgress.remap(0, 0.125, 0.5, 1)
 		const closingScaleProgress = instanceProgress.remap(0.125, 1, 1, 0)
 		const sizeProgress = min(
 			openingScaleProgress,
@@ -246,7 +253,9 @@ const createFirework = (count, position, size, texture, radius, color) => {
 	// Sprites
 	const firework = new THREE.Sprite(material)
 	firework.count = count
-	firework.position.copy(position)
+	firework.position.x = position.x
+	firework.position.y = position.y - 5
+	firework.position.z = position.z
 	scene.add(firework)
 
 	// Destroy
@@ -256,14 +265,23 @@ const createFirework = (count, position, size, texture, radius, color) => {
 	}
 
 	// Play sound
-	playExplosionSound(radius)
+	const riseDuration = playExplosionSound(radius)
 
-	// Animate
-	gsap.to(progress, {
-		value: 1,
-		ease: "none",
-		duration: 1 * fireworkDuration.value,
-		onComplete: destroy,
+
+	// Going Up phase
+	gsap.to(firework.position, {
+		y: position.y,
+		duration: riseDuration,
+		ease: launchEase(0.5),
+		onComplete: () => {
+			// Animate progress
+			gsap.to(progress, {
+				value: 1,
+				ease: "none",
+				duration: fireworkDuration.value,
+				onComplete: destroy,
+			})
+		},
 	})
 }
 
