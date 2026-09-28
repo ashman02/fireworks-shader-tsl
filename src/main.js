@@ -221,7 +221,7 @@ const fireworkDuration = uniform(3)
 const twinkleFrequency = uniform(30)
 const colorStrength = uniform(20)
 
-const createFirework = (count, position, size, texture, radius, instanceColor) => {
+const createFirework = (count, position, size, texture, radius) => {
 	// Material
 	const material = new THREE.SpriteNodeMaterial({
 		alphaMap: texture,
@@ -233,7 +233,6 @@ const createFirework = (count, position, size, texture, radius, instanceColor) =
 	// Uniforms
 	const progress = uniform(0)
 	const sizeUniform = uniform(size)
-	const colorUniform = uniform(color(instanceColor))
 
 	// Buffers
 	const positionsArray = new Float32Array(count * 3)
@@ -247,6 +246,12 @@ const createFirework = (count, position, size, texture, radius, instanceColor) =
 
 	const timesArray = new Float32Array(count)
 	const timesBuffer = new THREE.InstancedBufferAttribute(timesArray, 1)
+
+	const colorsArray = new Float32Array(count * 3)
+	const colorsBuffer = new THREE.InstancedBufferAttribute(
+		colorsArray,
+		3,
+	)
 
 	for (let i = 0; i < count; i++) {
 		const i3 = i * 3
@@ -265,6 +270,10 @@ const createFirework = (count, position, size, texture, radius, instanceColor) =
 
 		sizesArray[i] = Math.random()
 		timesArray[i] = 1 + Math.random()
+
+		colorsArray[i3 + 0] = Math.random()
+		colorsArray[i3 + 1] = Math.random()
+		colorsArray[i3 + 2] = Math.random()
 	}
 
 	// Position
@@ -325,7 +334,12 @@ const createFirework = (count, position, size, texture, radius, instanceColor) =
 	})()
 
 	// Color
-	material.colorNode = colorUniform.mul(colorStrength)
+	material.colorNode = Fn(() => {
+		// Buffer
+		const instancedColor = instancedBufferAttribute(colorsBuffer)
+
+		return instancedColor.mul(colorStrength)
+	})()
 
 	// Sprites
 	const firework = new THREE.Sprite(material)
@@ -372,9 +386,7 @@ const createRandomFirework = () => {
 	const size = 0.1 + Math.random() * 0.1
 	const texture = textures[Math.floor(Math.random() * textures.length)]
 	const radius = 0.5 + Math.random()
-	const color = new THREE.Color()
-	color.setHSL(Math.random(), 1, 0.7)
-	createFirework(count, position, size, texture, radius, color)
+	createFirework(count, position, size, texture, radius)
 }
 
 createRandomFirework()
