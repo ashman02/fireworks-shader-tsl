@@ -81,9 +81,44 @@ renderer.setClearColor(0x111111)
 renderer.inspector = new Inspector()
 
 /**
- * Audio
+ * Sound
  */
+const audioListener = new THREE.AudioContext() ? null : null // not needed, just using raw WebAudio
 
+const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+
+let explosionBuffer = null
+
+const loadSound = async (url) => {
+	const response = await fetch(url)
+	const arrayBuffer = await response.arrayBuffer()
+	explosionBuffer = await audioContext.decodeAudioData(arrayBuffer)
+}
+
+loadSound("./audios/firework.mp3")
+
+const playExplosionSound = (radius) => {
+	if (!explosionBuffer) return // not loaded yet
+
+	const source = audioContext.createBufferSource()
+	source.buffer = explosionBuffer
+
+	// Slight random pitch variation so repeated clicks don't sound identical
+	source.playbackRate.value = 0.8 + Math.random() * 0.4 // 0.8 - 1.2
+
+	const gainNode = audioContext.createGain()
+	// Scale volume a bit with radius, plus randomness
+	gainNode.gain.value = THREE.MathUtils.clamp(
+		radius * 0.4 + Math.random() * 0.2,
+		0.2,
+		1,
+	)
+
+	source.connect(gainNode)
+	gainNode.connect(audioContext.destination)
+
+	source.start(0)
+}
 
 /**
  * Fireworks
@@ -220,6 +255,9 @@ const createFirework = (count, position, size, texture, radius, color) => {
 		material.dispose()
 	}
 
+	// Play sound
+	playExplosionSound(radius)
+
 	// Animate
 	gsap.to(progress, {
 		value: 1,
@@ -236,7 +274,7 @@ const createRandomFirework = () => {
 		Math.random(),
 		(Math.random() - 0.5) * 2,
 	)
-    const size = 0.1 + Math.random() * 0.1
+	const size = 0.1 + Math.random() * 0.1
 	const texture = textures[Math.floor(Math.random() * textures.length)]
 	const radius = 0.5 + Math.random()
 	const color = new THREE.Color()
