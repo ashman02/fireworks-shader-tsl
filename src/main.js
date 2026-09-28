@@ -8,12 +8,14 @@ import {
 	instancedBufferAttribute,
 	min,
 	mul,
+	pass,
 	positionLocal,
 	range,
 	uniform,
 	vec3,
 } from "three/tsl"
 import gsap from "gsap"
+import {bloom} from "three/addons/tsl/display/BloomNode.js"
 
 /**
  * Base
@@ -81,6 +83,77 @@ renderer.setClearColor(0x111111)
 renderer.inspector = new Inspector()
 
 /**
+ * Post processing
+ */
+const renderPipeline = new THREE.RenderPipeline(renderer)
+const scenePass = pass(scene, camera)
+const scenePassColor = scenePass.getTextureNode("output")
+
+// bloom
+const bloomPass = bloom(scenePassColor)
+bloomPass.threshold.value = 0
+bloomPass.strength.value = 0.05
+
+renderPipeline.outputNode = scenePassColor.add(bloomPass)
+
+const bloomGui = renderer.inspector.createParameters("Bloom")
+bloomGui.add(bloomPass.threshold, "value", 0, 2, 0.01).name("threshold")
+bloomGui.add(bloomPass.strength, "value", 0, 2, 0.01).name("strength")
+
+/**
+ * Sky
+ */
+const sky = new SkyMesh()
+sky.scale.setScalar(1000)
+scene.add(sky)
+const effectController = {
+	turbidity: 10,
+	rayleigh: 3,
+	mieCoefficient: 0.005,
+	mieDirectionalG: 0.95,
+	elevation: -2.2,
+	azimuth: 180,
+	cloudCoverage: 0.4,
+	cloudDensity: 0.4,
+	cloudElevation: 0.5,
+}
+
+const sun = new THREE.Vector3()
+
+const skyChanged = () => {
+	sky.turbidity.value = effectController.turbidity
+	sky.rayleigh.value = effectController.rayleigh
+	sky.mieCoefficient.value = effectController.mieCoefficient
+	sky.mieDirectionalG.value = effectController.mieDirectionalG
+	sky.cloudCoverage.value = effectController.cloudCoverage
+	sky.cloudDensity.value = effectController.cloudDensity
+	sky.cloudElevation.value = effectController.cloudElevation
+
+	const phi = THREE.MathUtils.degToRad(90 - effectController.elevation)
+	const theta = THREE.MathUtils.degToRad(effectController.azimuth)
+
+	sun.setFromSphericalCoords(1, phi, theta)
+
+	sky.sunPosition.value.copy(sun)
+}
+
+skyChanged()
+
+// Debug
+const skyGui = renderer.inspector.createParameters("Sky").close()
+
+skyGui.add(effectController, "turbidity", 0.0, 20.0, 0.1).onChange(skyChanged)
+skyGui.add(effectController, "rayleigh", 0.0, 4, 0.001).onChange(skyChanged)
+skyGui
+	.add(effectController, "mieCoefficient", 0.0, 0.1, 0.001)
+	.onChange(skyChanged)
+skyGui
+	.add(effectController, "mieDirectionalG", 0.0, 1, 0.001)
+	.onChange(skyChanged)
+skyGui.add(effectController, "elevation", -10, 90, 0.1).onChange(skyChanged)
+skyGui.add(effectController, "azimuth", -180, 180, 0.1).onChange(skyChanged)
+
+/**
  * Sound
  */
 const audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -146,11 +219,11 @@ const launchEase = (stopping) => (t) =>
 const falldownStrength = uniform(0.2)
 const fireworkDuration = uniform(3)
 const twinkleFrequency = uniform(30)
+const colorStrength = uniform(20)
 
-const createFirework = (count, position, size, texture, radius, color) => {
+const createFirework = (count, position, size, texture, radius, instanceColor) => {
 	// Material
 	const material = new THREE.SpriteNodeMaterial({
-		color: color,
 		alphaMap: texture,
 		transparent: true,
 		depthWrite: false,
@@ -160,6 +233,7 @@ const createFirework = (count, position, size, texture, radius, color) => {
 	// Uniforms
 	const progress = uniform(0)
 	const sizeUniform = uniform(size)
+	const colorUniform = uniform(color(instanceColor))
 
 	// Buffers
 	const positionsArray = new Float32Array(count * 3)
@@ -250,6 +324,9 @@ const createFirework = (count, position, size, texture, radius, color) => {
 		return mul(sizeUniform, instancedSize, sizeProgress, sizeTwinkling)
 	})()
 
+	// Color
+	material.colorNode = colorUniform.mul(colorStrength)
+
 	// Sprites
 	const firework = new THREE.Sprite(material)
 	firework.count = count
@@ -308,59 +385,9 @@ const fireworkGui = renderer.inspector.createParameters("Firework")
 fireworkGui.add(falldownStrength, "value", 0, 1, 0.001).name("falldownSpeed")
 fireworkGui.add(fireworkDuration, "value", 0, 10, 0.01).name("duration")
 fireworkGui.add(twinkleFrequency, "value", 0, 50, 0.01).name("twinkleFrequency")
+fireworkGui.add(colorStrength, "value", 1, 50, 0.01).name("colorStrength")
 
-/**
- * Sky
- */
-const sky = new SkyMesh()
-sky.scale.setScalar(1000)
-scene.add(sky)
-const effectController = {
-	turbidity: 10,
-	rayleigh: 3,
-	mieCoefficient: 0.005,
-	mieDirectionalG: 0.95,
-	elevation: -2.2,
-	azimuth: 180,
-	cloudCoverage: 0.4,
-	cloudDensity: 0.4,
-	cloudElevation: 0.5,
-}
 
-const sun = new THREE.Vector3()
-
-const skyChanged = () => {
-	sky.turbidity.value = effectController.turbidity
-	sky.rayleigh.value = effectController.rayleigh
-	sky.mieCoefficient.value = effectController.mieCoefficient
-	sky.mieDirectionalG.value = effectController.mieDirectionalG
-	sky.cloudCoverage.value = effectController.cloudCoverage
-	sky.cloudDensity.value = effectController.cloudDensity
-	sky.cloudElevation.value = effectController.cloudElevation
-
-	const phi = THREE.MathUtils.degToRad(90 - effectController.elevation)
-	const theta = THREE.MathUtils.degToRad(effectController.azimuth)
-
-	sun.setFromSphericalCoords(1, phi, theta)
-
-	sky.sunPosition.value.copy(sun)
-}
-
-skyChanged()
-
-// Debug
-const skyGui = renderer.inspector.createParameters("Sky").close()
-
-skyGui.add(effectController, "turbidity", 0.0, 20.0, 0.1).onChange(skyChanged)
-skyGui.add(effectController, "rayleigh", 0.0, 4, 0.001).onChange(skyChanged)
-skyGui
-	.add(effectController, "mieCoefficient", 0.0, 0.1, 0.001)
-	.onChange(skyChanged)
-skyGui
-	.add(effectController, "mieDirectionalG", 0.0, 1, 0.001)
-	.onChange(skyChanged)
-skyGui.add(effectController, "elevation", -10, 90, 0.1).onChange(skyChanged)
-skyGui.add(effectController, "azimuth", -180, 180, 0.1).onChange(skyChanged)
 
 /**
  * Animate
@@ -368,8 +395,12 @@ skyGui.add(effectController, "azimuth", -180, 180, 0.1).onChange(skyChanged)
 const tick = () => {
 	// Update Controls
 	controls.update()
+
 	// Render
-	renderer.render(scene, camera)
+	// renderer.render(scene, camera)
+
+	// Render pipeline
+	renderPipeline.render()
 }
 
 renderer.setAnimationLoop(tick)
