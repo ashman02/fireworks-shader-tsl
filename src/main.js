@@ -77,6 +77,7 @@ const renderer = new THREE.WebGPURenderer({
 	canvas: canvas,
 	antialias: true,
 })
+renderer.toneMapping = THREE.CineonToneMapping
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 renderer.setClearColor(0x111111)
@@ -376,20 +377,50 @@ const createFirework = (count, position, size, texture, radius) => {
 	})
 }
 
-const createRandomFirework = () => {
+/**
+ * Cursor
+ */
+const raycaster = new THREE.Raycaster()
+const cursor = new THREE.Vector2()
+const intersect = new THREE.Vector3()
+let planeNormal = camera.position.clone().normalize()
+const plane = new THREE.Plane(planeNormal, 0)
+
+// Helper
+// const cursorHelper = new THREE.Mesh(
+// 	new THREE.IcosahedronGeometry(1, 3),
+// 	new THREE.MeshBasicMaterial({wireframe : true})
+// )
+// scene.add(cursorHelper)
+
+const getMouseCoordinates = (clientX, clientY) => {
+
+	// NDC Mouse coordinates
+	cursor.x = (clientX / sizes.width) * 2 - 1
+	cursor.y = - (clientY / sizes.height) * 2 + 1
+
+	// Raycaster + Cursor
+	raycaster.setFromCamera(cursor, camera)
+	planeNormal = camera.position.clone().normalize()
+	plane.normal = planeNormal
+	
+
+	raycaster.ray.intersectPlane(plane, intersect)
+
+	// cursorHelper.position.copy(intersect)
+	
+	return intersect
+}
+
+const createRandomFirework = (event) => {
 	const count = Math.round(400 + Math.random() * 1000)
-	const position = new THREE.Vector3(
-		(Math.random() - 0.5) * 2,
-		Math.random(),
-		(Math.random() - 0.5) * 2,
-	)
+	const position = getMouseCoordinates(event.clientX, event.clientY)
 	const size = 0.1 + Math.random() * 0.1
 	const texture = textures[Math.floor(Math.random() * textures.length)]
 	const radius = 0.5 + Math.random()
 	createFirework(count, position, size, texture, radius)
 }
 
-createRandomFirework()
 
 window.addEventListener("click", createRandomFirework)
 
